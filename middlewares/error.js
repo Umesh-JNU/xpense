@@ -2,7 +2,7 @@
 const ErrorHandler = require("../utils/errorHandler");
 
 module.exports = (err, req, res, next) => {
-  console.log(err);
+  console.log({ err });
   err.message = err.message || "Internal Server Error";
 
   // if (err instanceof multer.MulterError) {
@@ -19,6 +19,24 @@ module.exports = (err, req, res, next) => {
   //   }
   // }
 
+  if (err.code === '23502') {
+    err = new ErrorHandler(`${err.column} is required.`, 400);
+  }
+
+  if (err.code === '23514' || err.code === '23505') {
+    err.status = 400;
+    switch (err.constraint) {
+      case 'users_email_check':
+        err.message = 'Please provide a valid email address.';
+        break;
+      case 'users_email_key':
+        err.message = 'Email already registered.';
+        break;
+      default:
+        break;
+    }
+  }
+
   if (err.name === "CastError") {
     const msg = `Resource not found. Invalid: ${err.path}`;
     err = new ErrorHandler(msg, 400);
@@ -28,7 +46,7 @@ module.exports = (err, req, res, next) => {
     let errors = Object.values(err.errors).map((el) => {
       console.log("properties", el.properties)
       let e;
-      if(el.properties && el.properties.message) e = el.properties.message;
+      if (el.properties && el.properties.message) e = el.properties.message;
       else if (el.kind === "required") e = el.properties ? el.properties.message : err.message;
       else if (["minlength", "maxlength", "min", "max"].includes(el.kind))
         e = el.properties.message;

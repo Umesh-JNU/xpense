@@ -8,5 +8,5 @@ exports.uploadImage = catchAsyncError(async (req, res, next) => {
   if (!file) return next(new ErrorHandler("Invalid Image", 400));
 
   const results = await cloudinaryUpload(file);
-  res.send(results);
+  res.status(200).send(results);
 });

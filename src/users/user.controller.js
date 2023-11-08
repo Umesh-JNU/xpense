@@ -2,11 +2,12 @@ const fs = require('fs');
 const crypto = require("node:crypto");
 const path = require('path');
 
-const ErrorHandler = require("../../utils/errorHandler");
+const throwError = require("../../utils/errorHandler");
 const catchAsyncError = require("../../utils/catchAsyncError");
 const APIFeatures = require("../../utils/apiFeatures");
 const { passwordGenerator } = require("../../utils/randGenerator");
 const sendEmail = require("../../utils/sendEmail");
+const userModel = require("./user.model");
 
 const userUpdate = async (id, info, res, next) => {
   console.log({ id, info });
@@ -15,57 +16,65 @@ const userUpdate = async (id, info, res, next) => {
     runValidators: true
   });
 
-  if (!user) return next(new ErrorHandler('User not found', 404));
+  if (!user) throwError('User not found', 404);
 
   res.status(200).json({ user });
 }
+
+const sendData = (res, user, status) => {
+  const token = userModel.getJWTToken(user.id);
+  res.status(status).json({ user, token });
+};
+
 // Create a new document
 exports.createUser = catchAsyncError(async (req, res, next) => {
-  const password = passwordGenerator();
+  const user = await userModel.register(req.body);
+  sendData(res, user, 201);
+  // const password = passwordGenerator();
 
-  const userDetails = { ...req.body, password };
-  const user = await userModel.create(userDetails);
-  if (!user) {
-    return next(new ErrorHandler("Something Went Wrong. Please try again.", 500));
-  }
+  // const userDetails = { ...req.body, password };
+  // const user = await userModel.create(userDetails);
+  // if (!user) {
+  //   throwError("Something Went Wrong. Please try again.", 500);
+  // }
 
-  const token = await user.getJWTToken();
+  // const token = await user.getJWTToken();
 
-  if (req.body.googleRegistration) {
-    return res.status(200).json({ user, token });
-  }
+  // if (req.body.googleRegistration) {
+  //   return res.status(200).json({ user, token });
+  // }
 
-  try {
-    const template = fs.readFileSync(path.join(__dirname, "userRegister.html"), "utf-8");
+  // try {
+  //   const template = fs.readFileSync(path.join(__dirname, "userRegister.html"), "utf-8");
 
-    // /{{(\w+)}}/g - match {{Word}} globally
-    const renderedTemplate = template.replace(/{{(\w+)}}/g, (match, key) => {
-      // console.log({ match, key })
-      return userDetails[key] || match;
-    });
+  //   // /{{(\w+)}}/g - match {{Word}} globally
+  //   const renderedTemplate = template.replace(/{{(\w+)}}/g, (match, key) => {
+  //     // console.log({ match, key })
+  //     return userDetails[key] || match;
+  //   });
 
-    await sendEmail({
-      email: user.email,
-      subject: 'Successful Registration',
-      message: renderedTemplate
-    });
+  //   await sendEmail({
+  //     email: user.email,
+  //     subject: 'Successful Registration',
+  //     message: renderedTemplate
+  //   });
 
-    res.status(200).json({
-      user,
-      token,
-      message: `Email sent to ${user.email} successfully.`,
-    });
-  } catch (error) {
-    await userModel.deleteOne({ _id: user._id });
-    return next(new ErrorHandler(error.message, 500));
-  }
+  //   res.status(200).json({
+  //     user,
+  //     token,
+  //     message: `Email sent to ${user.email} successfully.`,
+  //   });
+  // } catch (error) {
+  //   await userModel.deleteOne({ _id: user._id });
+  //   throwError(error.message, 500);
+  // }
 });
 
 const loginWithGoogle = async (req, res, next) => {
   const { email } = req.body;
   const user = await userModel.findOne({ email });
   if (!user) {
-    return next(new ErrorHandler('User Not Found', 400));
+    throwError('User Not Found', 400);
   }
 
   const token = await user.getJWTToken();
@@ -76,27 +85,25 @@ exports.login = catchAsyncError(async (req, res, next) => {
   console.log("user login", req.body);
   const { email, password, googleLogin } = req.body;
 
-  if (googleLogin) {
-    return await loginWithGoogle(req, res, next);
-  }
+  // if (googleLogin) {
+  //   return await loginWithGoogle(req, res, next);
+  // }
 
   if (!email || !password)
-    return next(new ErrorHandler("Please enter your email and password", 400));
+    throwError("Please enter your email and password", 400);
 
-  const user = await userModel.findOne({ email }).select("+password");
+  const user = await userModel.login({ email });
+  console.log({ user })
   if (!user) {
-    var message = "Email is not registered with us. Please continue as guest.";
-    if (req.query.admin)
-      var message = "Invalid Credentials."
-    return next(new ErrorHandler(message, 401));
+    throwError("Invalid email or password.", 401);
   }
 
-  const isPasswordMatched = await user.comparePassword(password);
+  const isPasswordMatched = await userModel.comparePassword(password, user.password);
   if (!isPasswordMatched)
-    return next(new ErrorHandler("Invalid password!", 401));
+    throwError("Invalid password!", 401);
 
-  const token = await user.getJWTToken();
-  res.status(200).json({ user, token });
+  delete user.password;
+  sendData(res, user, 200);
 });
 
 // Get a single document by ID
@@ -104,7 +111,7 @@ exports.getUser = catchAsyncError(async (req, res, next) => {
   const { id } = req.params;
   const userId = req.userId;
   if (!isValidObjectId(id || userId)) {
-    return next(new ErrorHandler("Invalid User ID", 400));
+    throwError("Invalid User ID", 400);
   }
 
   if (req.query.task) {
@@ -203,7 +210,7 @@ exports.getUser = catchAsyncError(async (req, res, next) => {
   }
 
   if (!user) {
-    return next(new ErrorHandler("User not found.", 404));
+    throwError("User not found.", 404);
   }
 
   res.status(200).json({ user });
@@ -213,7 +220,7 @@ exports.getUser = catchAsyncError(async (req, res, next) => {
 exports.updateProfile = catchAsyncError(async (req, res, next) => {
   const userId = req.userId;
   if (!isValidObjectId(userId)) {
-    return next(new ErrorHandler("Invalid User ID", 400));
+    throwError("Invalid User ID", 400);
   }
 
   delete req.body.password;
@@ -226,25 +233,25 @@ exports.updatePassword = catchAsyncError(async (req, res, next) => {
   const userId = req.userId;
   if (!isValidObjectId(userId)) {
     console.log({ userId }, 2)
-    return next(new ErrorHandler("Invalid User ID", 400));
+    throwError("Invalid User ID", 400);
   }
 
   const { curPassword, newPassword, confirmPassword } = req.body;
   if (!curPassword)
-    return next(new ErrorHandler("Current Password is required.", 400));
+    throwError("Current Password is required.", 400);
 
   if (!newPassword || !confirmPassword)
-    return next(new ErrorHandler("Password or Confirm Password is required.", 400));
+    throwError("Password or Confirm Password is required.", 400);
 
   if (newPassword !== confirmPassword)
-    return next(new ErrorHandler("Please confirm your password,", 400));
+    throwError("Please confirm your password,", 400);
 
   const user = await userModel.findOne({ _id: userId }).select("+password");
-  if (!user) return new ErrorHandler("User Not Found.", 404);
+  if (!user) return throwError("User Not Found.", 404);
 
   const isPasswordMatched = await user.comparePassword(curPassword);
   if (!isPasswordMatched)
-    return next(new ErrorHandler("Current Password is invalid.", 400));
+    throwError("Current Password is invalid.", 400);
 
   user.password = newPassword;
   await user.save();
@@ -296,7 +303,7 @@ exports.deleteSalePerson = catchAsyncError(async (req, res, next) => {
   let user = await userModel.findById(id);
 
   if (!user)
-    return next(new ErrorHandler("Sale Person not found", 404));
+    throwError("Sale Person not found", 404);
 
   await warrantyModel.updateMany({ salePerson: user._id }, { salePerson: null });
   await user.deleteOne();
@@ -312,7 +319,7 @@ exports.deleteUser = catchAsyncError(async (req, res, next) => {
   let user = await userModel.findById(id);
 
   if (!user)
-    return next(new ErrorHandler("User not found", 404));
+    throwError("User not found", 404);
 
   await transactionModel.deleteMany({ user: user._id });
   await warrantyModel.deleteMany({ user: user._id });
@@ -328,12 +335,12 @@ exports.forgotPassword = catchAsyncError(async (req, res, next) => {
   console.log("forgot password", req.body)
   const { email } = req.body;
   if (!email) {
-    return next(new ErrorHandler("Please provide the email.", 400));
+    throwError("Please provide the email.", 400);
   }
 
   const user = await userModel.findOne({ email });
   if (!user) {
-    return next(new ErrorHandler("User not found", 404));
+    throwError("User not found", 404);
   }
   // get resetPassword Token
   const resetToken = user.getResetPasswordToken();
@@ -365,7 +372,7 @@ exports.forgotPassword = catchAsyncError(async (req, res, next) => {
     user.resetPasswordToken = undefined;
     user.resetPasswordExpire = undefined;
     await user.save({ validateBeforeSave: false });
-    return next(new ErrorHandler(error.message, 500));
+    throwError(error.message, 500);
   }
 });
 
@@ -374,7 +381,7 @@ exports.resetPassword = catchAsyncError(async (req, res, next) => {
   console.log("reset password", req.body);
   const { password, confirmPassword } = req.body;
   if (!password || !confirmPassword) {
-    return next(new ErrorHandler("Please provide password and confirm password.", 400));
+    throwError("Please provide password and confirm password.", 400);
   }
   // creating hash token
   const resetPasswordToken = crypto
@@ -387,11 +394,11 @@ exports.resetPassword = catchAsyncError(async (req, res, next) => {
     resetPasswordExpire: { $gt: Date.now() },
   });
   if (!user) {
-    return next(new ErrorHandler("Reset password token is invalid or has been expired.", 400));
+    throwError("Reset password token is invalid or has been expired.", 400);
   }
 
   if (password !== confirmPassword) {
-    return next(new ErrorHandler("Please confirm your password", 400));
+    throwError("Please confirm your password", 400);
   }
   user.password = password;
   user.resetPasswordExpire = undefined;

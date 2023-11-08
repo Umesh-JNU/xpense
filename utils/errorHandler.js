@@ -7,4 +7,6 @@ class ErrorHandler extends Error {
   }
 }
 
-module.exports = ErrorHandler;
+module.exports = (message, statusCode = 400) => {
+  throw new ErrorHandler(message, statusCode);
+};

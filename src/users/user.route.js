@@ -6,7 +6,7 @@ const { upload } = require("../../utils/cloud");
 // const { singleImage } = require("../../middlewares/uploadImage");
 const { createUser, getUser, login, updateProfile, updatePassword, forgotPassword, resetPassword } = require("./user.controller");
 
-router.post("/register", upload.single('profile_img'), uploadImage, createUser);
+router.post("/register", createUser);
 router.post("/login", login);
 router.get("/profile", auth, getUser);
 // router.put("/update-profile/image", auth, upload.single("profile_img"), singleImage, updateProfile);

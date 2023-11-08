@@ -5,15 +5,15 @@ const path = require('path');
 exports.cloudinaryUpload = (file) => {
   console.log({ file });
   const params = {
-    width: 200,
-    height: 200,
+    width: 500,
+    height: 500,
     gravity: 'auto',
     crop: 'fill',
-    folder: 'avatars',
+    folder: 'devTown',
     use_filename: true,
     unique_filename: true,
     overwrite: true,
-    public_id: `${Date.now()}/${path.parse(file.originalname).name}`
+    public_id: `${Date.now()}-${path.parse(file.originalname).name}`
   };
 
   return new Promise((resolve, reject) => {
@@ -24,7 +24,7 @@ exports.cloudinaryUpload = (file) => {
       }
       else {
         console.log({ result });
-        resolve(result);
+        resolve(result.secure_url);
       }
     }).end(file.buffer);
   })
